@@ -1,80 +1,42 @@
-import express from "express"
-import http from "http"
-import { Server } from "socket.io"
-import cors from "cors"
-import dotenv from "dotenv"
 import mongoose from "mongoose"
-import Message from "./models/Message"
 
-dotenv.config()
+const messageSchema = new mongoose.Schema(
+  {
+    room: {
+      type: String,
+      required: true
+    },
 
-const app = express()
+    username: {
+      type: String,
+      required: true
+    },
 
-app.use(cors({ origin: "*", credentials: true }))
-app.use(express.json())
+    text: {
+      type: String,
+      required: true
+    },
 
-const server = http.createServer(app)
+    role: {
+      type: String,
+      enum: ["vendor", "customer", "guest"],
+      default: "guest"
+    },
 
-const io = new Server(server, {
-  cors: { origin: "*" }
-})
+    type: {
+      type: String,
+      enum: ["product", "service", "event", "request", "general"],
+      default: "general"
+    },
 
-/* ================= SOCKET ================= */
-io.on("connection", (socket) => {
-  console.log("🟢 Connected:", socket.id)
-
-  /* JOIN ROOM */
-  socket.on("joinRoom", async ({ room, username }) => {
-    if (!room) return
-
-    socket.join(room)
-
-    console.log(`📡 ${username} joined ${room}`)
-
-    const messages = await Message.find({ room }).sort({ createdAt: 1 })
-
-    console.log("📦 Loaded:", messages.length)
-
-    socket.emit("loadMessages", messages)
-  })
-
-  /* SEND MESSAGE */
-  socket.on("sendMessage", async (data) => {
-    try {
-      if (!data?.room || !data?.text) return
-
-      const newMessage = await Message.create({
-        room: data.room,
-        username: data.username,
-        text: data.text,
-        role: data.role || "guest",
-        type: data.type || "general",
-        category: data.category || "general"
-      })
-
-      console.log("💾 Saved:", newMessage)
-
-      /* 🔥 SEND ONLY TO ROOM */
-      io.to(data.room).emit("newMessage", newMessage)
-
-    } catch (err) {
-      console.error("❌ Save error:", err)
+    category: {
+      type: String,
+      default: "general"
     }
-  })
-})
+  },
+  {
+    timestamps: true
+  }
+)
 
-app.get("/", (req, res) => {
-  res.json({ message: "Venex API running 🚀" })
-})
-
-const PORT = process.env.PORT || 5051
-
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("✅ Mongo connected")
-
-    server.listen(PORT, () => {
-      console.log(`🚀 Running on ${PORT}`)
-    })
-  })
-  .catch(err => console.error(err))
+export default mongoose.model("Message", messageSchema)

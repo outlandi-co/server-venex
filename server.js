@@ -4,11 +4,7 @@ import { Server } from "socket.io"
 import cors from "cors"
 import dotenv from "dotenv"
 import mongoose from "mongoose"
-import Message from "./models/Message"
-
-/* 🔥 REDIS */
-import { createAdapter } from "@socket.io/redis-adapter"
-import { createClient } from "redis"
+import Message from "./models/Message.js"
 
 dotenv.config()
 
@@ -23,7 +19,6 @@ app.use(express.json())
 
 const server = http.createServer(app)
 
-/* ================= SOCKET ================= */
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -31,31 +26,9 @@ const io = new Server(server, {
   }
 })
 
-/* 🔥 CONNECT REDIS */
-const initRedis = async () => {
-  if (!process.env.REDIS_URL) {
-    console.log("⚠️ REDIS_URL not set — single instance mode")
-    return
-  }
-
-  try {
-    const pubClient = createClient({ url: process.env.REDIS_URL })
-    const subClient = pubClient.duplicate()
-
-    await pubClient.connect()
-    await subClient.connect()
-
-    io.adapter(createAdapter(pubClient, subClient))
-
-    console.log("🧠 Redis adapter connected")
-  } catch (err) {
-    console.error("❌ Redis connection failed:", err)
-  }
-}
-
-/* ================= SOCKET EVENTS ================= */
+/* ================= SOCKET ================= */
 io.on("connection", (socket) => {
-  console.log("🟢 Connected:", socket.id, "PID:", process.pid)
+  console.log("🟢 Connected:", socket.id)
 
   /* JOIN ROOM */
   socket.on("joinRoom", async ({ room, username }) => {
@@ -68,11 +41,11 @@ io.on("connection", (socket) => {
     try {
       const messages = await Message.find({ room }).sort({ createdAt: 1 })
 
-      console.log("📦 Loaded messages:", messages.length)
+      console.log("📦 Loaded:", messages.length)
 
       socket.emit("loadMessages", messages)
     } catch (err) {
-      console.error("❌ Load messages error:", err)
+      console.error("❌ Load error:", err)
     }
   })
 
@@ -92,7 +65,7 @@ io.on("connection", (socket) => {
 
       console.log("💾 Saved:", newMessage._id)
 
-      /* 🔥 ROOM BROADCAST (WORKS WITH REDIS) */
+      /* 🔥 SEND TO ROOM */
       io.to(data.room).emit("newMessage", newMessage)
 
     } catch (err) {
@@ -105,7 +78,7 @@ io.on("connection", (socket) => {
   })
 })
 
-/* ================= ROUTES ================= */
+/* ================= ROUTE ================= */
 app.get("/", (req, res) => {
   res.json({ message: "Venex API running 🚀" })
 })
@@ -113,19 +86,12 @@ app.get("/", (req, res) => {
 /* ================= START ================= */
 const PORT = process.env.PORT || 5051
 
-const start = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
     console.log("✅ Mongo connected")
-
-    await initRedis()
 
     server.listen(PORT, () => {
       console.log(`🚀 Running on ${PORT}`)
     })
-  } catch (err) {
-    console.error("❌ Startup error:", err)
-  }
-}
-
-start()
+  })
+  .catch(err => console.error(err))
