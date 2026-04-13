@@ -9,11 +9,16 @@ import Message from "./models/Message.js"
 dotenv.config()
 
 console.log("🌐 MONGO_URI LOADED:", !!process.env.MONGO_URI)
+console.log("🌐 CLIENT_URL:", process.env.CLIENT_URL)
 
 const app = express()
 
 /* ================= MIDDLEWARE ================= */
-app.use(cors({ origin: "*" }))
+app.use(cors({
+  origin: process.env.CLIENT_URL || "*",
+  credentials: true
+}))
+
 app.use(express.json())
 
 /* ================= SERVER ================= */
@@ -21,7 +26,8 @@ const server = http.createServer(app)
 
 const io = new Server(server, {
   cors: {
-    origin: "*"
+    origin: process.env.CLIENT_URL || "*",
+    methods: ["GET", "POST"]
   }
 })
 
@@ -38,6 +44,8 @@ io.on("connection", (socket) => {
   /* ================= JOIN ROOM ================= */
   socket.on("joinRoom", async ({ room, username }) => {
     try {
+      if (!room) return
+
       socket.join(room)
 
       console.log(`📡 Joined room: ${room} (${username})`)
@@ -45,14 +53,13 @@ io.on("connection", (socket) => {
       /* 🟢 TRACK USERS */
       if (!roomUsers[room]) roomUsers[room] = []
 
-      // prevent duplicate entries for same socket
       roomUsers[room] = roomUsers[room].filter(
         (u) => u.socketId !== socket.id
       )
 
       roomUsers[room].push({
         socketId: socket.id,
-        username
+        username: username || "Anon"
       })
 
       /* 🔥 BROADCAST USERS LIST */
@@ -74,8 +81,6 @@ io.on("connection", (socket) => {
   /* ================= SEND MESSAGE ================= */
   socket.on("sendMessage", async (data) => {
     try {
-      console.log("📩 RECEIVED MESSAGE:", data)
-
       if (!data?.room || !data?.text) {
         console.warn("⚠️ Invalid message payload")
         return
@@ -85,13 +90,10 @@ io.on("connection", (socket) => {
         room: data.room,
         username: data.username || "Anon",
         text: data.text,
-
         role: data.role || "guest",
         type: data.type || "general",
         category: data.category || "general"
       })
-
-      console.log("💾 SAVED TO DB:", newMessage._id)
 
       io.to(data.room).emit("newMessage", newMessage)
 
@@ -119,7 +121,7 @@ app.get("/", (req, res) => {
   res.json({ message: "Venex API running 🚀" })
 })
 
-/* ================= TEST SAVE ROUTE ================= */
+/* ================= TEST SAVE ================= */
 app.get("/test-save", async (req, res) => {
   try {
     const msg = await Message.create({
@@ -131,8 +133,6 @@ app.get("/test-save", async (req, res) => {
       category: "apparel"
     })
 
-    console.log("🧪 TEST SAVE:", msg)
-
     res.json(msg)
   } catch (err) {
     console.error("❌ TEST SAVE ERROR:", err)
@@ -143,13 +143,15 @@ app.get("/test-save", async (req, res) => {
 /* ================= DB + START ================= */
 const PORT = process.env.PORT || 5051
 
+/* ================= START SERVER FIRST ================= */
+server.listen(PORT, () => {
+  console.log(`🚀 Venex backend running on ${PORT}`)
+})
+
+/* ================= CONNECT MONGO ================= */
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected")
-
-    server.listen(PORT, () => {
-      console.log(`🚀 Venex backend running on ${PORT}`)
-    })
   })
   .catch(err => {
     console.error("❌ Mongo error:", err.message)
