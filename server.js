@@ -20,8 +20,10 @@ app.use(cors({
 
 app.use(express.json())
 
+/* ================= ROUTES ================= */
 app.use("/api/auth", authRoutes)
 
+/* ================= SERVER ================= */
 const server = http.createServer(app)
 
 const io = new Server(server, {
@@ -59,6 +61,8 @@ io.on("connection", (socket) => {
     socket.data.username = safeUser.username
     socket.data.role = safeUser.role
 
+    console.log(`📡 ${safeUser.username} joined ${room}`)
+
     try {
       const messages = await Message.find({ room }).sort({ createdAt: 1 })
       socket.emit("loadMessages", messages)
@@ -67,42 +71,58 @@ io.on("connection", (socket) => {
 
       const users = clients.map(s => ({
         socketId: s.id,
-        username: s.data?.username || "Guest",
-        role: s.data?.role || "guest"
+        username: s.data.username,
+        role: s.data.role
       }))
 
       io.to(room).emit("roomUsers", users)
 
     } catch (err) {
-      console.error(err)
+      console.error("❌ Load error:", err)
     }
   })
 
   socket.on("sendMessage", async (data) => {
-    if (!data?.room || !data?.text) return
+    try {
+      if (!data?.room || !data?.text) return
 
-    const msg = await Message.create({
-      room: data.room,
-      username: socket.data.username,
-      text: data.text,
-      role: socket.data.role,
-      type: data.type || "general",
-      category: data.category || "general"
-    })
+      const newMessage = await Message.create({
+        room: data.room,
+        username: socket.data.username,
+        text: data.text,
+        role: socket.data.role,
+        type: data.type || "general",
+        category: data.category || "general"
+      })
 
-    io.to(data.room).emit("newMessage", msg)
+      console.log("💾 Saved:", newMessage._id)
+
+      io.to(data.room).emit("newMessage", newMessage)
+
+    } catch (err) {
+      console.error("❌ Save error:", err)
+    }
+  })
+
+  socket.on("disconnect", () => {
+    console.log("🔴 Disconnected:", socket.id)
   })
 })
 
+/* ================= HEALTH ================= */
 app.get("/", (req, res) => {
   res.json({ message: "Venex API running 🚀" })
 })
 
+/* ================= START ================= */
 const PORT = process.env.PORT || 5051
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ Mongo connected")
-    server.listen(PORT, () => console.log(`🚀 Running on ${PORT}`))
+
+    server.listen(PORT, () => {
+      console.log(`🚀 Running on ${PORT}`)
+    })
   })
-  .catch(console.error)
+  .catch(err => console.error("❌ Mongo error:", err))
