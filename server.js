@@ -49,13 +49,19 @@ const io = new Server(server, {
   }
 })
 
-/* ================= LIVE USERS STORE ================= */
+/* ================= USERS ================= */
 const roomUsers = {}
 
 /* ================= SOCKET ================= */
 io.on("connection", (socket) => {
 
   console.log("🟢 User connected:", socket.id)
+
+  /* 🔥 GLOBAL DEBUG EVENT */
+  io.emit("debug", {
+    message: "New user connected",
+    socketId: socket.id
+  })
 
   socket.emit("connected", { message: "Socket connected ✅" })
 
@@ -67,7 +73,7 @@ io.on("connection", (socket) => {
       socket.join(room)
 
       console.log(`📡 Joined room: ${room} (${username})`)
-      console.log("📡 Current socket rooms:", socket.rooms)
+      console.log("📡 Socket rooms:", socket.rooms)
 
       if (!roomUsers[room]) roomUsers[room] = []
 
@@ -109,7 +115,7 @@ io.on("connection", (socket) => {
 
       console.log("💾 SAVED MESSAGE:", newMessage._id)
 
-      /* 🔥 KEY FIX: SEND TO EVERYONE */
+      /* 🔥 GUARANTEED BROADCAST */
       io.emit("newMessage", newMessage)
 
       console.log("📡 BROADCASTED TO ALL CLIENTS")
