@@ -59,6 +59,7 @@ io.on("connection", (socket) => {
 
   socket.emit("connected", { message: "Socket connected ✅" })
 
+  /* ================= JOIN ROOM ================= */
   socket.on("joinRoom", async ({ room, username }) => {
     try {
       if (!room) return
@@ -66,6 +67,7 @@ io.on("connection", (socket) => {
       socket.join(room)
 
       console.log(`📡 Joined room: ${room} (${username})`)
+      console.log("📡 Current socket rooms:", socket.rooms)
 
       if (!roomUsers[room]) roomUsers[room] = []
 
@@ -89,6 +91,7 @@ io.on("connection", (socket) => {
     }
   })
 
+  /* ================= SEND MESSAGE ================= */
   socket.on("sendMessage", async (data) => {
     try {
       console.log("📩 MESSAGE RECEIVED:", data)
@@ -104,13 +107,19 @@ io.on("connection", (socket) => {
         category: data.category || "general"
       })
 
-      io.to(data.room).emit("newMessage", newMessage)
+      console.log("💾 SAVED MESSAGE:", newMessage._id)
+
+      /* 🔥 KEY FIX: SEND TO EVERYONE */
+      io.emit("newMessage", newMessage)
+
+      console.log("📡 BROADCASTED TO ALL CLIENTS")
 
     } catch (err) {
       console.error("❌ SAVE MESSAGE ERROR:", err)
     }
   })
 
+  /* ================= DISCONNECT ================= */
   socket.on("disconnect", () => {
     console.log("🔴 User disconnected:", socket.id)
 
