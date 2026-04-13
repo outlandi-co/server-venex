@@ -44,66 +44,83 @@ io.on("connection", (socket) => {
 
   socket.emit("connected", { message: "Socket connected ✅" })
 
-  /* ================= JOIN ROOM ================= */
-  socket.on("joinRoom", async ({ room, username }) => {
-    try {
-      if (!room) return
+/* ================= JOIN ROOM ================= */
+socket.on("joinRoom", async ({ room, username }) => {
+  try {
+    if (!room) return
 
-      socket.join(room)
+    socket.join(room)
 
-      console.log(`📡 Joined room: ${room} (${username})`)
+    console.log(`📡 Joined room: ${room} (${username})`)
+    console.log("📡 Rooms for socket:", socket.rooms)
 
-      /* 🟢 TRACK USERS */
-      if (!roomUsers[room]) roomUsers[room] = []
+    /* 🟢 TRACK USERS */
+    if (!roomUsers[room]) roomUsers[room] = []
 
-      roomUsers[room] = roomUsers[room].filter(
-        (u) => u.socketId !== socket.id
-      )
+    roomUsers[room] = roomUsers[room].filter(
+      (u) => u.socketId !== socket.id
+    )
 
-      roomUsers[room].push({
-        socketId: socket.id,
-        username: username || "Anon"
-      })
+    roomUsers[room].push({
+      socketId: socket.id,
+      username: username || "Anon"
+    })
 
-      /* 🔥 BROADCAST USERS LIST */
-      io.to(room).emit("roomUsers", roomUsers[room])
+    /* 🔥 BROADCAST USERS LIST */
+    io.to(room).emit("roomUsers", roomUsers[room])
 
-      /* ================= LOAD MESSAGES ================= */
-      const messages = await Message.find({ room }).sort({ createdAt: 1 })
+    /* ================= LOAD MESSAGES ================= */
+    const messages = await Message.find({ room }).sort({ createdAt: 1 })
 
-      console.log(`📦 Loaded ${messages.length} messages`)
+    console.log(`📦 Loaded ${messages.length} messages`)
 
-      socket.emit("loadMessages", messages)
+    socket.emit("loadMessages", messages)
 
-    } catch (err) {
-      console.error("❌ JOIN ROOM ERROR:", err)
-      socket.emit("error", "Failed to join room")
+  } catch (err) {
+    console.error("❌ JOIN ROOM ERROR:", err)
+    socket.emit("error", "Failed to join room")
+  }
+})
+
+/* ================= SEND MESSAGE ================= */
+socket.on("sendMessage", async (data) => {
+  try {
+    console.log("📩 MESSAGE RECEIVED:", data)
+
+    if (!data?.room || !data?.text) {
+      console.warn("⚠️ Invalid message payload")
+      return
     }
-  })
 
-  /* ================= SEND MESSAGE ================= */
-  socket.on("sendMessage", async (data) => {
-    try {
-      if (!data?.room || !data?.text) {
-        console.warn("⚠️ Invalid message payload")
-        return
-      }
+    /* 🔥 ENSURE SOCKET IS IN ROOM */
+    const rooms = Array.from(socket.rooms)
+    console.log("📡 Current socket rooms:", rooms)
 
-      const newMessage = await Message.create({
-        room: data.room,
-        username: data.username || "Anon",
-        text: data.text,
-        role: data.role || "guest",
-        type: data.type || "general",
-        category: data.category || "general"
-      })
-
-      io.to(data.room).emit("newMessage", newMessage)
-
-    } catch (err) {
-      console.error("❌ SAVE MESSAGE ERROR:", err)
+    if (!rooms.includes(data.room)) {
+      console.warn("⚠️ Socket not in room — auto joining:", data.room)
+      socket.join(data.room)
     }
-  })
+
+    const newMessage = await Message.create({
+      room: data.room,
+      username: data.username || "Anon",
+      text: data.text,
+      role: data.role || "guest",
+      type: data.type || "general",
+      category: data.category || "general"
+    })
+
+    console.log("💾 Saved message:", newMessage._id)
+
+    /* 🔥 EMIT TO ROOM */
+    io.to(data.room).emit("newMessage", newMessage)
+
+    console.log("📤 Emitted message to room:", data.room)
+
+  } catch (err) {
+    console.error("❌ SAVE MESSAGE ERROR:", err)
+  }
+})
 
   /* ================= DISCONNECT ================= */
   socket.on("disconnect", () => {
