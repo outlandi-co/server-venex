@@ -60,6 +60,7 @@ io.on("connection", (socket) => {
 
     socket.data.username = safeUser.username
     socket.data.role = safeUser.role
+    socket.data.userId = decoded?.id || null
 
     console.log(`📡 ${safeUser.username} joined ${room}`)
 
@@ -70,11 +71,11 @@ io.on("connection", (socket) => {
       const clients = await io.in(room).fetchSockets()
 
       const users = clients.map(s => ({
-        socketId: s.id,
-        username: s.data.username,
-        role: s.data.role
-      }))
-
+  socketId: s.id,
+  username: s.data.username,
+  role: s.data.role,
+  userId: s.data.userId // 👈 ADD THIS
+}))
       io.to(room).emit("roomUsers", users)
 
     } catch (err) {
