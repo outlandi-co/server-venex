@@ -9,16 +9,30 @@ import Message from "./models/Message.js"
 dotenv.config()
 
 console.log("🌐 MONGO_URI LOADED:", !!process.env.MONGO_URI)
-console.log("🌐 CLIENT_URL:", process.env.CLIENT_URL)
+console.log("🌐 CLIENT_URL RAW:", process.env.CLIENT_URL)
+
+/* ================= CLEAN CLIENT URL ================= */
+const CLIENT_URL = process.env.CLIENT_URL?.replace("CLIENT_URL=", "") || ""
+
+console.log("🌐 CLIENT_URL CLEAN:", CLIENT_URL)
 
 const app = express()
 
-/* ================= MIDDLEWARE ================= */
+/* ================= CORS ================= */
+const allowedOrigins = [
+  "http://localhost:5173",
+  CLIENT_URL
+].filter(Boolean)
+
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    process.env.CLIENT_URL
-  ],
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      console.warn("❌ CORS BLOCKED:", origin)
+      callback(new Error("Not allowed by CORS"))
+    }
+  },
   credentials: true
 }))
 
@@ -29,13 +43,14 @@ const server = http.createServer(app)
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "*",
-    methods: ["GET", "POST"]
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
   }
 })
 
 /* ================= LIVE USERS STORE ================= */
-const roomUsers = {} // { roomId: [{ socketId, username }] }
+const roomUsers = {}
 
 /* ================= SOCKET ================= */
 io.on("connection", (socket) => {
@@ -44,85 +59,58 @@ io.on("connection", (socket) => {
 
   socket.emit("connected", { message: "Socket connected ✅" })
 
-/* ================= JOIN ROOM ================= */
-socket.on("joinRoom", async ({ room, username }) => {
-  try {
-    if (!room) return
+  socket.on("joinRoom", async ({ room, username }) => {
+    try {
+      if (!room) return
 
-    socket.join(room)
+      socket.join(room)
 
-    console.log(`📡 Joined room: ${room} (${username})`)
-    console.log("📡 Rooms for socket:", socket.rooms)
+      console.log(`📡 Joined room: ${room} (${username})`)
 
-    /* 🟢 TRACK USERS */
-    if (!roomUsers[room]) roomUsers[room] = []
+      if (!roomUsers[room]) roomUsers[room] = []
 
-    roomUsers[room] = roomUsers[room].filter(
-      (u) => u.socketId !== socket.id
-    )
+      roomUsers[room] = roomUsers[room].filter(
+        (u) => u.socketId !== socket.id
+      )
 
-    roomUsers[room].push({
-      socketId: socket.id,
-      username: username || "Anon"
-    })
+      roomUsers[room].push({
+        socketId: socket.id,
+        username: username || "Anon"
+      })
 
-    /* 🔥 BROADCAST USERS LIST */
-    io.to(room).emit("roomUsers", roomUsers[room])
+      io.to(room).emit("roomUsers", roomUsers[room])
 
-    /* ================= LOAD MESSAGES ================= */
-    const messages = await Message.find({ room }).sort({ createdAt: 1 })
+      const messages = await Message.find({ room }).sort({ createdAt: 1 })
 
-    console.log(`📦 Loaded ${messages.length} messages`)
+      socket.emit("loadMessages", messages)
 
-    socket.emit("loadMessages", messages)
-
-  } catch (err) {
-    console.error("❌ JOIN ROOM ERROR:", err)
-    socket.emit("error", "Failed to join room")
-  }
-})
-
-/* ================= SEND MESSAGE ================= */
-socket.on("sendMessage", async (data) => {
-  try {
-    console.log("📩 MESSAGE RECEIVED:", data)
-
-    if (!data?.room || !data?.text) {
-      console.warn("⚠️ Invalid message payload")
-      return
+    } catch (err) {
+      console.error("❌ JOIN ROOM ERROR:", err)
     }
+  })
 
-    /* 🔥 ENSURE SOCKET IS IN ROOM */
-    const rooms = Array.from(socket.rooms)
-    console.log("📡 Current socket rooms:", rooms)
+  socket.on("sendMessage", async (data) => {
+    try {
+      console.log("📩 MESSAGE RECEIVED:", data)
 
-    if (!rooms.includes(data.room)) {
-      console.warn("⚠️ Socket not in room — auto joining:", data.room)
-      socket.join(data.room)
+      if (!data?.room || !data?.text) return
+
+      const newMessage = await Message.create({
+        room: data.room,
+        username: data.username || "Anon",
+        text: data.text,
+        role: data.role || "guest",
+        type: data.type || "general",
+        category: data.category || "general"
+      })
+
+      io.to(data.room).emit("newMessage", newMessage)
+
+    } catch (err) {
+      console.error("❌ SAVE MESSAGE ERROR:", err)
     }
+  })
 
-    const newMessage = await Message.create({
-      room: data.room,
-      username: data.username || "Anon",
-      text: data.text,
-      role: data.role || "guest",
-      type: data.type || "general",
-      category: data.category || "general"
-    })
-
-    console.log("💾 Saved message:", newMessage._id)
-
-    /* 🔥 EMIT TO ROOM */
-    io.to(data.room).emit("newMessage", newMessage)
-
-    console.log("📤 Emitted message to room:", data.room)
-
-  } catch (err) {
-    console.error("❌ SAVE MESSAGE ERROR:", err)
-  }
-})
-
-  /* ================= DISCONNECT ================= */
   socket.on("disconnect", () => {
     console.log("🔴 User disconnected:", socket.id)
 
@@ -141,38 +129,13 @@ app.get("/", (req, res) => {
   res.json({ message: "Venex API running 🚀" })
 })
 
-/* ================= TEST SAVE ================= */
-app.get("/test-save", async (req, res) => {
-  try {
-    const msg = await Message.create({
-      room: "test-room",
-      username: "system",
-      text: "Hello from API",
-      role: "vendor",
-      type: "product",
-      category: "apparel"
-    })
-
-    res.json(msg)
-  } catch (err) {
-    console.error("❌ TEST SAVE ERROR:", err)
-    res.status(500).json(err)
-  }
-})
-
-/* ================= DB + START ================= */
+/* ================= START ================= */
 const PORT = process.env.PORT || 5051
 
-/* ================= START SERVER FIRST ================= */
 server.listen(PORT, () => {
   console.log(`🚀 Venex backend running on ${PORT}`)
 })
 
-/* ================= CONNECT MONGO ================= */
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("✅ MongoDB connected")
-  })
-  .catch(err => {
-    console.error("❌ Mongo error:", err.message)
-  })
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => console.error("❌ Mongo error:", err.message))
