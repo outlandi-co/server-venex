@@ -4,7 +4,7 @@ import { Server } from "socket.io"
 import cors from "cors"
 import dotenv from "dotenv"
 import mongoose from "mongoose"
-import Message from "./models/Message.js"
+import Message from "./models/Message"
 
 /* 🔥 REDIS */
 import { createAdapter } from "@socket.io/redis-adapter"
