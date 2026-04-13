@@ -31,22 +31,26 @@ const io = new Server(server, {
   }
 })
 
-/* 🔥 CONNECT REDIS + ATTACH ADAPTER */
+/* 🔥 CONNECT REDIS */
 const initRedis = async () => {
   if (!process.env.REDIS_URL) {
-    console.log("⚠️ REDIS_URL not set — running single-instance mode")
+    console.log("⚠️ REDIS_URL not set — single instance mode")
     return
   }
 
-  const pubClient = createClient({ url: process.env.REDIS_URL })
-  const subClient = pubClient.duplicate()
+  try {
+    const pubClient = createClient({ url: process.env.REDIS_URL })
+    const subClient = pubClient.duplicate()
 
-  await pubClient.connect()
-  await subClient.connect()
+    await pubClient.connect()
+    await subClient.connect()
 
-  io.adapter(createAdapter(pubClient, subClient))
+    io.adapter(createAdapter(pubClient, subClient))
 
-  console.log("🧠 Redis adapter connected")
+    console.log("🧠 Redis adapter connected")
+  } catch (err) {
+    console.error("❌ Redis connection failed:", err)
+  }
 }
 
 /* ================= SOCKET EVENTS ================= */
@@ -61,9 +65,15 @@ io.on("connection", (socket) => {
 
     console.log(`📡 ${username} joined ${room}`)
 
-    const messages = await Message.find({ room }).sort({ createdAt: 1 })
+    try {
+      const messages = await Message.find({ room }).sort({ createdAt: 1 })
 
-    socket.emit("loadMessages", messages)
+      console.log("📦 Loaded messages:", messages.length)
+
+      socket.emit("loadMessages", messages)
+    } catch (err) {
+      console.error("❌ Load messages error:", err)
+    }
   })
 
   /* SEND MESSAGE */
@@ -82,16 +92,20 @@ io.on("connection", (socket) => {
 
       console.log("💾 Saved:", newMessage._id)
 
-      /* 🔥 BROADCAST VIA REDIS TO ALL INSTANCES */
+      /* 🔥 ROOM BROADCAST (WORKS WITH REDIS) */
       io.to(data.room).emit("newMessage", newMessage)
 
     } catch (err) {
       console.error("❌ Save error:", err)
     }
   })
+
+  socket.on("disconnect", () => {
+    console.log("🔴 Disconnected:", socket.id)
+  })
 })
 
-/* ================= ROUTE ================= */
+/* ================= ROUTES ================= */
 app.get("/", (req, res) => {
   res.json({ message: "Venex API running 🚀" })
 })
