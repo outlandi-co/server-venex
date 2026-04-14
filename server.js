@@ -5,35 +5,76 @@ import cors from "cors"
 import dotenv from "dotenv"
 import mongoose from "mongoose"
 import jwt from "jsonwebtoken"
+import bcrypt from "bcryptjs"
 
+/* MODELS */
 import Message from "./models/Message.js"
+import User from "./models/User.js"
+
+/* ROUTES */
 import authRoutes from "./routes/auth.js"
+import subscribeRoutes from "./routes/subscribe.js"
+import eventRoutes from "./routes/events.js"
 
 dotenv.config()
 
 const app = express()
 
-app.use(cors({
-  origin: "*",
-  credentials: true
-}))
-
+/* ================= MIDDLEWARE ================= */
+app.use(cors({ origin: "*", credentials: true }))
 app.use(express.json())
 
 /* ================= ROUTES ================= */
 app.use("/api/auth", authRoutes)
+app.use("/api/subscribe", subscribeRoutes)
+app.use("/api/events", eventRoutes)
+
+/* ================= ADMIN SETUP (SECURE) ================= */
+app.post("/api/create-admin", async (req, res) => {
+  try {
+    const { secret } = req.body
+
+    if (secret !== process.env.ADMIN_SECRET) {
+      return res.status(403).json({ message: "Unauthorized" })
+    }
+
+    const exists = await User.findOne({ email: "admin@venex.com" })
+    if (exists) {
+      return res.json({ message: "Admin already exists" })
+    }
+
+    const hashed = await bcrypt.hash("admin123", 10)
+
+    const admin = await User.create({
+      name: "Admin",
+      email: "admin@venex.com",
+      password: hashed,
+      role: "admin",
+      approved: true
+    })
+
+    res.json({
+      message: "Admin created",
+      admin: {
+        email: admin.email,
+        role: admin.role
+      }
+    })
+
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Admin creation failed" })
+  }
+})
 
 /* ================= SERVER ================= */
 const server = http.createServer(app)
 
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] }
 })
 
-/* 🔐 JWT HELPER */
+/* JWT */
 const getUserFromToken = (token) => {
   try {
     return jwt.verify(token, process.env.JWT_SECRET || "secret123")
@@ -46,73 +87,39 @@ const getUserFromToken = (token) => {
 io.on("connection", (socket) => {
   console.log("🟢 Connected:", socket.id)
 
-  socket.on("joinRoom", async ({ room, username, role, token }) => {
+  socket.on("joinRoom", async (data) => {
+    const { room, username, role, token } = data || {}
     if (!room) return
 
     const decoded = getUserFromToken(token)
 
     const safeUser = {
       username: username || decoded?.username || "Guest",
-      role: role || decoded?.role || "guest"
+      role: role || decoded?.role || "guest",
+      userId: decoded?.id || null
     }
 
     socket.join(room)
+    socket.data = safeUser
 
-    socket.data.username = safeUser.username
-    socket.data.role = safeUser.role
-    socket.data.userId = decoded?.id || null
-
-    console.log(`📡 ${safeUser.username} joined ${room}`)
-
-    try {
-      const messages = await Message.find({ room }).sort({ createdAt: 1 })
-      socket.emit("loadMessages", messages)
-
-      const clients = await io.in(room).fetchSockets()
-
-      const users = clients.map(s => ({
-  socketId: s.id,
-  username: s.data.username,
-  role: s.data.role,
-  userId: s.data.userId // 👈 ADD THIS
-}))
-      io.to(room).emit("roomUsers", users)
-
-    } catch (err) {
-      console.error("❌ Load error:", err)
-    }
+    const messages = await Message.find({ room }).sort({ createdAt: 1 })
+    socket.emit("loadMessages", messages)
   })
 
   socket.on("sendMessage", async (data) => {
-    try {
-      if (!data?.room || !data?.text) return
+    if (!data?.room || !data?.text) return
 
-      const newMessage = await Message.create({
-        room: data.room,
-        username: socket.data.username,
-        text: data.text,
-        role: socket.data.role,
-        type: data.type || "general",
-        category: data.category || "general"
-      })
+    const newMessage = await Message.create({
+      room: data.room,
+      username: socket.data?.username || "Guest",
+      role: socket.data?.role || "guest",
+      text: data.text,
+      type: data.type || "general",
+      category: data.category || "general"
+    })
 
-      console.log("💾 Saved:", newMessage._id)
-
-      io.to(data.room).emit("newMessage", newMessage)
-
-    } catch (err) {
-      console.error("❌ Save error:", err)
-    }
+    io.to(data.room).emit("newMessage", newMessage)
   })
-
-  socket.on("disconnect", () => {
-    console.log("🔴 Disconnected:", socket.id)
-  })
-})
-
-/* ================= HEALTH ================= */
-app.get("/", (req, res) => {
-  res.json({ message: "Venex API running 🚀" })
 })
 
 /* ================= START ================= */
@@ -121,9 +128,6 @@ const PORT = process.env.PORT || 5051
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ Mongo connected")
-
-    server.listen(PORT, () => {
-      console.log(`🚀 Running on ${PORT}`)
-    })
+    server.listen(PORT, () => console.log(`🚀 Running on ${PORT}`))
   })
   .catch(err => console.error("❌ Mongo error:", err))

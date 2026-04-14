@@ -1,14 +1,22 @@
 import mongoose from "mongoose"
 
 const userSchema = new mongoose.Schema({
-  username: String,
-  email: String,
+  name: String,
+  email: {
+    type: String,
+    unique: true
+  },
   password: String,
-
   role: {
     type: String,
-    enum: ["vendor", "customer", "coordinator"],
-    default: "customer"
+    enum: ["admin", "vendor", "coordinator"],
+    default: "vendor"
+  },
+
+  /* 🔥 NEW FIELD */
+  approved: {
+    type: Boolean,
+    default: false
   }
 
 }, { timestamps: true })
