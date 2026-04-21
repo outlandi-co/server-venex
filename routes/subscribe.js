@@ -17,7 +17,6 @@ router.post("/", async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase()
 
-    /* 🔥 CHECK IF ALREADY EXISTS */
     const existing = await Subscriber.findOne({ email: normalizedEmail })
 
     if (existing) {
@@ -29,12 +28,11 @@ router.post("/", async (req, res) => {
       })
     }
 
-    /* ✅ CREATE NEW */
     const subscriber = await Subscriber.create({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: normalizedEmail,
-      eventId: eventId || ""
+      eventId: eventId ? String(eventId).trim() : ""
     })
 
     console.log("✅ SUBSCRIBER SAVED:", subscriber._id)
@@ -43,10 +41,8 @@ router.post("/", async (req, res) => {
       message: "Subscription saved",
       subscriber
     })
-
   } catch (err) {
     console.error("❌ SUBSCRIBE ROUTE ERROR:", err)
-
     return res.status(500).json({
       message: "Error saving subscriber",
       error: err.message
