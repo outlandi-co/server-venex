@@ -7,22 +7,41 @@ router.post("/", async (req, res) => {
   try {
     const { firstName, lastName, email, eventId } = req.body
 
-    if (!email) {
-      return res.status(400).json({ message: "Email required" })
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({
+        message: "First name, last name, and email are required"
+      })
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedEventId = eventId || ""
+
+    const existing = await Subscriber.findOne({
+      email: normalizedEmail,
+      eventId: normalizedEventId
+    })
+
+    if (existing) {
+      return res.status(200).json({
+        message: "Already subscribed",
+        subscriber: existing
+      })
     }
 
     const sub = await Subscriber.create({
-      firstName,
-      lastName,
-      email,
-      eventId
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: normalizedEmail,
+      eventId: normalizedEventId
     })
 
-    res.json(sub)
-
+    return res.status(201).json({
+      message: "Subscription saved",
+      subscriber: sub
+    })
   } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: "Error saving subscriber" })
+    console.error("SUBSCRIBE ERROR:", err)
+    return res.status(500).json({ message: "Error saving subscriber" })
   }
 })
 
