@@ -5,7 +5,7 @@ const router = express.Router()
 
 router.post("/", async (req, res) => {
   try {
-    console.log("📩 /api/subscribe BODY:", req.body)
+    console.log("📩 SUBSCRIBE BODY:", req.body)
 
     const { firstName, lastName, email, eventId } = req.body
 
@@ -15,21 +15,38 @@ router.post("/", async (req, res) => {
       })
     }
 
+    const normalizedEmail = email.trim().toLowerCase()
+
+    /* 🔥 CHECK IF ALREADY EXISTS */
+    const existing = await Subscriber.findOne({ email: normalizedEmail })
+
+    if (existing) {
+      console.log("⚠️ Already subscribed:", normalizedEmail)
+
+      return res.status(200).json({
+        message: "Already subscribed",
+        subscriber: existing
+      })
+    }
+
+    /* ✅ CREATE NEW */
     const subscriber = await Subscriber.create({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      email: email.trim().toLowerCase(),
-      eventId: eventId ? String(eventId).trim() : ""
+      email: normalizedEmail,
+      eventId: eventId || ""
     })
 
-    console.log("✅ Subscriber saved:", subscriber._id)
+    console.log("✅ SUBSCRIBER SAVED:", subscriber._id)
 
     return res.status(201).json({
-      message: "Subscriber saved",
+      message: "Subscription saved",
       subscriber
     })
+
   } catch (err) {
     console.error("❌ SUBSCRIBE ROUTE ERROR:", err)
+
     return res.status(500).json({
       message: "Error saving subscriber",
       error: err.message
