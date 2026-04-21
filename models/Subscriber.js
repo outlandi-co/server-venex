@@ -5,21 +5,22 @@ const subscriberSchema = new mongoose.Schema(
     firstName: {
       type: String,
       trim: true,
-      default: ""
+      required: true
     },
     lastName: {
       type: String,
       trim: true,
-      default: ""
+      required: true
     },
     email: {
       type: String,
-      required: true,
       trim: true,
-      lowercase: true
+      lowercase: true,
+      required: true
     },
     eventId: {
       type: String,
+      trim: true,
       default: ""
     }
   },
